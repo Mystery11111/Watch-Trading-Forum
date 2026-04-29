@@ -150,6 +150,37 @@ exports.deleteThread = async (req, res) => {
   res.json({ success: true });
 };
 
+exports.deleteComment = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const comment = await Comment.findById(req.params.commentId);
+    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+    const isAuthor = comment.authorId && comment.authorId.toString() === user._id.toString();
+    const isModerator = user.role === 'owner' || user.role === 'admin';
+    if (!isAuthor && !isModerator) {
+      return res.status(403).json({ message: 'Forbidden: only the author, an admin, or the owner can delete this comment' });
+    }
+    const thread = await Thread.findById(comment.threadId);
+    const authorId = comment.authorId;
+    await comment.deleteOne();
+    if (thread) {
+      thread.commentCount = Math.max(0, (thread.commentCount || 1) - 1);
+      await thread.save();
+    }
+    if (authorId) {
+      const author = await User.findById(authorId);
+      if (author) {
+        author.commentCount = Math.max(0, (author.commentCount || 1) - 1);
+        await author.save();
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.createComment = async (req, res) => {
   const user = await User.findById(req.user.id);
   const thread = await Thread.findById(req.params.id);
