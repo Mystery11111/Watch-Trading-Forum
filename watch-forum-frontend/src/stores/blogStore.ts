@@ -1,448 +1,240 @@
 // ============================================
 // BLOG STORE
-// SEO-optimized blog posts with multilingual support
-// Posts are stored in MongoDB via the backend API.
+// Posts are persisted in MongoDB via the backend API.
+// Starts empty — no seed posts shown on load.
+//
+// setPostTranslations() saves translations to local store + backend.
+// translatePost() processes all 15 languages one at a time and
+// updates translationProgress[postId] after each language so the
+// editor can display a live "Translating 3/15 — French…" counter.
+// translatingIds prevents the same post from being translated twice.
 // ============================================
 
 import { create } from 'zustand';
 import type { BlogPost } from '@/types';
 import { api } from '@/lib/api';
-import { autoTranslateBlogPost, autoTranslateBlogPostAsync, getTranslationUrls } from '@/services/translationService';
+import { translateSingleLanguage } from '@/services/translationService';
+import { SUPPORTED_LANGUAGES } from '@/stores/languageStore';
+
+export interface TranslationProgress {
+  current: number;   // languages completed so far
+  total: number;     // total languages to translate (14)
+  language: string;  // human name of the language currently being translated
+}
 
 interface BlogState {
   posts: BlogPost[];
-  searchQuery: string;
   isLoading: boolean;
+  searchQuery: string;
+  translatingIds: Set<string>;
+  translationProgress: Record<string, TranslationProgress>;
 
-  // Lifecycle
   initialize: () => Promise<void>;
 
-  // Actions
-  createPost: (post: Omit<BlogPost, 'id' | 'publishedAt' | 'updatedAt' | 'viewCount' | 'translations'>, autoTranslate?: boolean) => Promise<BlogPost>;
-  updatePost: (id: string, updates: Partial<BlogPost>, autoTranslate?: boolean) => Promise<void>;
+  createPost: (
+    post: Omit<BlogPost, 'id' | 'publishedAt' | 'updatedAt' | 'viewCount' | 'translations'>,
+  ) => Promise<BlogPost>;
+  updatePost: (id: string, updates: Partial<BlogPost>) => Promise<void>;
   deletePost: (id: string) => Promise<void>;
   deletePostWithTranslations: (id: string) => Promise<void>;
-  getPostBySlug: (slug: string, lang?: string) => BlogPost | undefined;
-  getPostById: (id: string, lang?: string) => BlogPost | undefined;
+
+  /** Save translations to local store and persist to backend */
+  setPostTranslations: (id: string, translations: Record<string, any>) => void;
+
+  getPostBySlug: (slug: string) => BlogPost | undefined;
+  getPostById: (id: string) => BlogPost | undefined;
+  getOriginalPostByAnySlug: (slug: string) => BlogPost | undefined;
   getAllPosts: () => BlogPost[];
   getPublishedPosts: () => BlogPost[];
-  incrementViews: (id: string) => void;
   getRelatedPosts: (postId: string, limit?: number) => BlogPost[];
   setSearchQuery: (query: string) => void;
-  // Translation helpers
+
   getTranslatedPost: (post: BlogPost, lang: string) => BlogPost;
-  generateTranslatedSlug: (baseSlug: string, lang: string) => string;
-  // Functions for handling translated slugs
-  getOriginalPostByAnySlug: (slug: string) => BlogPost | undefined;
-  getPostIdByAnySlug: (slug: string) => string | undefined;
-  // Async real translation via MyMemory API
+
+  /**
+   * Translate a post into all supported languages, one at a time.
+   * translationProgress[id] is updated after each language so callers
+   * can await this promise and render a real-time progress bar.
+   * Safe to call multiple times — ignored if already in progress.
+   */
   translatePost: (id: string) => Promise<void>;
+
+  incrementViews: (id: string) => void;
 }
 
-// ============================================
-// SLUG GENERATOR
-// ============================================
-const generateSlug = (title: string): string => {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-};
+const generateSlug = (title: string): string =>
+  title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-// ============================================
-// INITIAL BLOG POSTS
-// Used as fallback while API loads or if API is empty on first deploy.
-// ============================================
-const createInitialPosts = (): BlogPost[] => {
-  const posts = [
-    {
-      id: 'blog-1',
-      title: 'What Should Your First Watch Be?',
-      slug: 'what-should-your-first-watch-be',
-      excerpt: 'A comprehensive guide for newcomers to the watch collecting world. Learn which timepieces offer the best value for beginners and how to start your collection on the right foot.',
-      content: `
-        <h2>Starting Your Watch Journey</h2>
-        <p>Choosing your first watch is an exciting milestone. Whether you're drawn to the craftsmanship of mechanical movements or the precision of quartz, there's a perfect timepiece waiting for you.</p>
-        
-        <h3>Consider Your Budget</h3>
-        <p>Before diving into the vast world of watches, establish a realistic budget. Entry-level mechanical watches from brands like Seiko, Orient, and Citizen offer exceptional value between $200-$500.</p>
-        
-        <h3>Understand Watch Movements</h3>
-        <p>There are three main types of watch movements:</p>
-        <ul>
-          <li><strong>Mechanical:</strong> Powered by a mainspring, no battery needed</li>
-          <li><strong>Automatic:</strong> Self-winding mechanical movement</li>
-          <li><strong>Quartz:</strong> Battery-powered, highly accurate</li>
-        </ul>
-        
-        <h3>Style Matters</h3>
-        <p>Consider your lifestyle and wardrobe. A versatile dress watch works for formal occasions, while a sports watch handles daily wear and outdoor activities.</p>
-        
-        <h2>Our Top Recommendations</h2>
-        <p>For beginners, we recommend starting with brands like Seiko 5, Orient Bambino, or the Timex Weekender. These offer excellent build quality and heritage at accessible prices.</p>
-      `,
-      authorId: 'owner-1',
-      authorName: 'SiteOwner',
-      authorAvatar: '/avatar-owner.png',
-      featuredImage: 'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=1200',
-      tags: ['Beginner Guide', 'Watch Collecting', 'First Watch', 'Buying Guide'],
-      publishedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      viewCount: 1250,
-    },
-    {
-      id: 'blog-2',
-      title: 'Understanding Rolex Reference Numbers',
-      slug: 'understanding-rolex-reference-numbers',
-      excerpt: 'Decode the mysterious world of Rolex reference numbers. Learn what those digits mean and how to identify different models, generations, and variations.',
-      content: `
-        <h2>The Rolex Numbering System</h2>
-        <p>Rolex uses a sophisticated reference number system that encodes information about each watch model. Understanding these numbers is essential for any serious collector.</p>
-        
-        <h3>5-Digit vs 6-Digit References</h3>
-        <p>Older Rolex models use 5-digit references, while modern models use 6 digits. The extra digit typically indicates a new generation with updated features.</p>
-        
-        <h3>Decoding the Numbers</h3>
-        <p>The first 2-3 digits indicate the model family:</p>
-        <ul>
-          <li>11xxx - Oyster Perpetual</li>
-          <li>12xxx - Datejust</li>
-          <li>16xxx - Datejust 36mm</li>
-          <li>116xxx - Daytona</li>
-          <li>126xxx - Submariner</li>
-        </ul>
-        
-        <h2>Material Codes</h2>
-        <p>The last digit often indicates the material:</p>
-        <ul>
-          <li>0 - Steel</li>
-          <li>1 - Everose gold &amp; steel</li>
-          <li>3 - Yellow gold &amp; steel</li>
-          <li>4 - White gold &amp; steel</li>
-          <li>6 - Platinum</li>
-          <li>8 - Yellow gold</li>
-          <li>9 - White gold</li>
-        </ul>
-      `,
-      authorId: 'owner-1',
-      authorName: 'SiteOwner',
-      authorAvatar: '/avatar-owner.png',
-      featuredImage: 'https://images.unsplash.com/photo-1614164185128-e4ec99c436d7?w=1200',
-      tags: ['Rolex', 'Reference Numbers', 'Education', 'Luxury Watches'],
-      publishedAt: new Date(Date.now() - 86400000).toISOString(),
-      updatedAt: new Date(Date.now() - 86400000).toISOString(),
-      viewCount: 892,
-    },
-    {
-      id: 'blog-3',
-      title: 'Investment Watches: What Holds Value?',
-      slug: 'investment-watches-what-holds-value',
-      excerpt: 'Discover which watches make smart investments and which ones to avoid. Learn about depreciation, appreciation, and the factors that affect a watch\'s resale value.',
-      content: `
-        <h2>Watches as Investments</h2>
-        <p>While most watches depreciate like cars, certain models from prestigious brands can actually appreciate over time. Understanding what drives value is crucial for collectors.</p>
-        
-        <h3>Brands That Hold Value</h3>
-        <p>Certain brands consistently perform well in the secondary market:</p>
-        <ul>
-          <li><strong>Rolex:</strong> The gold standard for value retention</li>
-          <li><strong>Patek Philippe:</strong> Exceptional long-term appreciation</li>
-          <li><strong>Audemars Piguet:</strong> Royal Oak models perform strongly</li>
-          <li><strong>Vacheron Constantin:</strong> Undervalued with growth potential</li>
-        </ul>
-        
-        <h3>Factors Affecting Value</h3>
-        <p>Several factors determine a watch's investment potential:</p>
-        <ul>
-          <li>Brand heritage and reputation</li>
-          <li>Limited production numbers</li>
-          <li>Condition and completeness (box, papers)</li>
-          <li>Market demand and trends</li>
-          <li>Historical significance</li>
-        </ul>
-        
-        <h2>Buy What You Love</h2>
-        <p>While investment potential is important, remember to buy watches you genuinely enjoy. The best investment is one you'll wear and appreciate for years to come.</p>
-      `,
-      authorId: 'owner-1',
-      authorName: 'SiteOwner',
-      authorAvatar: '/avatar-owner.png',
-      featuredImage: 'https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=1200',
-      tags: ['Investment', 'Value Retention', 'Buying Guide', 'Market Analysis'],
-      publishedAt: new Date(Date.now() - 172800000).toISOString(),
-      updatedAt: new Date(Date.now() - 172800000).toISOString(),
-      viewCount: 2103,
-    },
-  ];
+// Languages excluding English
+const TRANSLATION_LANGS = SUPPORTED_LANGUAGES.filter(l => l.code !== 'en');
 
-  return posts.map(post => ({
-    ...post,
-    translations: autoTranslateBlogPost(
-      post.title,
-      post.excerpt,
-      post.content,
-      post.title,
-      post.excerpt,
-      post.slug
-    ),
-  }));
-};
+export const useBlogStore = create<BlogState>()((set, get) => ({
+  posts: [],
+  isLoading: true,
+  searchQuery: '',
+  translatingIds: new Set<string>(),
+  translationProgress: {},
 
-// ============================================
-// BLOG STORE
-// ============================================
-export const useBlogStore = create<BlogState>()(
-  (set, get) => ({
-    posts: createInitialPosts(),
-    searchQuery: '',
-    isLoading: true,
+  initialize: async () => {
+    try {
+      const data: BlogPost[] = await api.get('/blog');
+      set({ posts: data, isLoading: false });
+    } catch {
+      set({ isLoading: false });
+    }
+  },
 
-    // ============================================
-    // INITIALIZE — fetch all posts from backend
-    // Falls back to hardcoded initial posts if the
-    // API is unreachable or the collection is empty.
-    // ============================================
-    initialize: async () => {
-      try {
-        const data: BlogPost[] = await api.get('/blog');
-        set({ posts: data.length > 0 ? data : createInitialPosts(), isLoading: false });
-      } catch {
-        set({ isLoading: false });
-      }
-    },
+  createPost: async (postData) => {
+    const postSlug = postData.slug || generateSlug(postData.title);
+    const payload = { ...postData, slug: postSlug, viewCount: 0, translations: {} };
+    const newPost: BlogPost = await api.post('/blog', payload);
+    set(state => ({ posts: [newPost, ...state.posts] }));
+    return newPost;
+  },
 
-    // ============================================
-    // CREATE POST — persists to backend
-    // ============================================
-    createPost: async (postData, autoTranslate = true) => {
-      const postSlug = postData.slug || generateSlug(postData.title);
+  updatePost: async (id, updates) => {
+    const updatedPost: BlogPost = await api.patch(`/blog/${id}`, updates);
+    set(state => ({
+      posts: state.posts.map(p => (p.id === id ? { ...p, ...updatedPost } : p)),
+    }));
+  },
 
-      const translations = autoTranslate
-        ? autoTranslateBlogPost(
-            postData.title,
-            postData.excerpt,
-            postData.content,
-            postData.metaTitle,
-            postData.metaDescription,
-            postSlug
-          )
-        : {};
+  deletePost: async (id) => {
+    await api.del(`/blog/${id}`);
+    set(state => ({ posts: state.posts.filter(p => p.id !== id) }));
+  },
 
-      const payload = {
-        ...postData,
-        slug: postSlug,
-        viewCount: 0,
-        translations,
-      };
+  deletePostWithTranslations: async (id) => {
+    await api.del(`/blog/${id}`);
+    set(state => ({ posts: state.posts.filter(p => p.id !== id) }));
+  },
 
-      const newPost: BlogPost = await api.post('/blog', payload);
-      set(state => ({ posts: [newPost, ...state.posts] }));
-      return newPost;
-    },
+  // ─── setPostTranslations ────────────────────────────────────────────────────
+  setPostTranslations: (id, translations) => {
+    set(state => ({
+      posts: state.posts.map(p => (p.id === id ? { ...p, translations } : p)),
+    }));
+    api.patch(`/blog/${id}`, { translations }).catch(() => {});
+  },
 
-    // ============================================
-    // UPDATE POST — persists to backend
-    // ============================================
-    updatePost: async (id, updates, autoTranslate = true) => {
-      const existing = get().posts.find(p => p.id === id);
+  // ─── translatePost ───────────────────────────────────────────────────────────
+  translatePost: async (id) => {
+    if (get().translatingIds.has(id)) return;
 
-      let translations = existing?.translations || {};
-      if (autoTranslate && (
-        updates.title ||
-        updates.excerpt ||
-        updates.content ||
-        updates.metaTitle ||
-        updates.metaDescription
-      )) {
-        translations = autoTranslateBlogPost(
-          updates.title || existing?.title || '',
-          updates.excerpt || existing?.excerpt || '',
-          updates.content || existing?.content || '',
-          updates.metaTitle || existing?.metaTitle,
-          updates.metaDescription || existing?.metaDescription
-        );
-      }
+    const post = get().posts.find(p => p.id === id);
+    if (!post) return;
 
-      const updatedPost: BlogPost = await api.patch(
-        `/blog/${id}`,
-        { ...updates, translations }
+    const total = TRANSLATION_LANGS.length;
+    const baseSlug = post.slug;
+    const metaTitle = post.metaTitle || post.title;
+    const metaDescription = post.metaDescription || post.excerpt;
+
+    // Mark as in-progress with starting progress
+    set(state => ({
+      translatingIds: new Set([...state.translatingIds, id]),
+      translationProgress: {
+        ...state.translationProgress,
+        [id]: { current: 0, total, language: '' },
+      },
+    }));
+
+    const translations: Record<string, any> = {};
+
+    for (let i = 0; i < TRANSLATION_LANGS.length; i++) {
+      const { code, name } = TRANSLATION_LANGS[i];
+
+      // Update progress: show which language is being translated now
+      set(state => ({
+        translationProgress: {
+          ...state.translationProgress,
+          [id]: { current: i, total, language: name },
+        },
+      }));
+
+      const result = await translateSingleLanguage(
+        code,
+        post.title,
+        post.excerpt,
+        post.content,
+        metaTitle,
+        metaDescription,
+        baseSlug,
       );
+      translations[code] = result;
 
-      set(state => ({
-        posts: state.posts.map(p => p.id === id ? { ...p, ...updatedPost } : p),
-      }));
-    },
+      // Short pause between languages to respect MyMemory rate limits
+      await new Promise(r => setTimeout(r, 250));
+    }
 
-    // ============================================
-    // DELETE POST — removes from backend
-    // ============================================
-    deletePost: async (id) => {
-      await api.del(`/blog/${id}`);
-      set(state => ({ posts: state.posts.filter(p => p.id !== id) }));
-    },
+    // Update local store → UI reacts (flags appear)
+    set(state => ({
+      posts: state.posts.map(p => (p.id === id ? { ...p, translations } : p)),
+      translatingIds: new Set([...state.translatingIds].filter(tid => tid !== id)),
+      translationProgress: Object.fromEntries(
+        Object.entries(state.translationProgress).filter(([k]) => k !== id),
+      ),
+    }));
 
-    // ============================================
-    // DELETE POST WITH TRANSLATIONS
-    // Translations are embedded in the post, so same as deletePost.
-    // ============================================
-    deletePostWithTranslations: async (id) => {
-      await api.del(`/blog/${id}`);
-      set(state => ({ posts: state.posts.filter(p => p.id !== id) }));
-    },
+    // Persist to backend
+    api.patch(`/blog/${id}`, { translations }).catch(() => {});
+  },
 
-    // ============================================
-    // GET POST BY SLUG
-    // ============================================
-    getPostBySlug: (slug, lang = 'en') => {
-      const post = get().posts.find(post => {
-        if (post.slug === slug) return true;
-        if (post.translations) {
-          return Object.values(post.translations).some((t: any) => t.slug === slug);
-        }
-        return false;
-      });
+  incrementViews: (id) => {
+    api.post(`/blog/${id}/view`).catch(() => {});
+    set(state => ({
+      posts: state.posts.map(p =>
+        p.id === id ? { ...p, viewCount: p.viewCount + 1 } : p,
+      ),
+    }));
+  },
 
-      if (!post) return undefined;
+  // Search English slug first; if not found, search within all translations.
+  // This lets /blog/fr/my-post-fr correctly load the French version.
+  getPostBySlug: (slug) => {
+    const direct = get().posts.find(p => p.slug === slug);
+    if (direct) return direct;
+    return get().posts.find(p =>
+      p.translations &&
+      Object.values(p.translations as Record<string, any>).some(t => t.slug === slug),
+    );
+  },
 
-      if (lang !== 'en' && post.translations?.[lang]) {
-        return get().getTranslatedPost(post, lang);
+  getOriginalPostByAnySlug: (slug) =>
+    get().posts.find(p => {
+      if (p.slug === slug) return true;
+      if (p.translations) {
+        return Object.values(p.translations).some((t: any) => t.slug === slug);
       }
+      return false;
+    }),
 
-      return post;
-    },
+  getPostById: (id) => get().posts.find(p => p.id === id),
+  getAllPosts: () => get().posts,
+  getPublishedPosts: () =>
+    get().posts.filter(p => new Date(p.publishedAt) <= new Date()),
 
-    // ============================================
-    // GET ORIGINAL POST BY ANY SLUG
-    // ============================================
-    getOriginalPostByAnySlug: (slug: string) => {
-      return get().posts.find(post => {
-        if (post.slug === slug) return true;
-        if (post.translations) {
-          return Object.values(post.translations).some((t: any) => t.slug === slug);
-        }
-        return false;
-      });
-    },
+  getRelatedPosts: (postId, limit = 3) => {
+    const current = get().posts.find(p => p.id === postId);
+    if (!current) return [];
+    return get()
+      .posts.filter(p => p.id !== postId && p.tags.some(t => current.tags.includes(t)))
+      .slice(0, limit);
+  },
 
-    // ============================================
-    // GET POST ID BY ANY SLUG
-    // ============================================
-    getPostIdByAnySlug: (slug: string) => {
-      const post = get().posts.find(post => {
-        if (post.slug === slug) return true;
-        if (post.translations) {
-          return Object.values(post.translations).some((t: any) => t.slug === slug);
-        }
-        return false;
-      });
-      return post?.id;
-    },
+  setSearchQuery: (query) => set({ searchQuery: query }),
 
-    // ============================================
-    // GET POST BY ID
-    // ============================================
-    getPostById: (id, lang = 'en') => {
-      const post = get().posts.find(post => post.id === id);
-      if (!post) return undefined;
-      if (lang !== 'en' && post.translations?.[lang]) {
-        return get().getTranslatedPost(post, lang);
-      }
-      return post;
-    },
-
-    // ============================================
-    // GET ALL POSTS
-    // ============================================
-    getAllPosts: () => {
-      return get().posts;
-    },
-
-    // ============================================
-    // GET PUBLISHED POSTS
-    // ============================================
-    getPublishedPosts: () => {
-      return get().posts.filter(post => new Date(post.publishedAt) <= new Date());
-    },
-
-    // ============================================
-    // INCREMENT VIEW COUNT — fire-and-forget to backend
-    // ============================================
-    incrementViews: (id) => {
-      api.post(`/blog/${id}/view`).catch(() => {});
-      set(state => ({
-        posts: state.posts.map(post =>
-          post.id === id ? { ...post, viewCount: post.viewCount + 1 } : post
-        ),
-      }));
-    },
-
-    // ============================================
-    // GET RELATED POSTS
-    // ============================================
-    getRelatedPosts: (postId, limit = 3) => {
-      const currentPost = get().getPostById(postId);
-      if (!currentPost) return [];
-      return get().posts
-        .filter(post => post.id !== postId)
-        .filter(post => post.tags.some(tag => currentPost.tags.includes(tag)))
-        .slice(0, limit);
-    },
-
-    // ============================================
-    // SET SEARCH QUERY
-    // ============================================
-    setSearchQuery: (query) => {
-      set({ searchQuery: query });
-    },
-
-    // ============================================
-    // GET TRANSLATED POST
-    // ============================================
-    getTranslatedPost: (post, lang) => {
-      const translation = post.translations?.[lang];
-      if (!translation) return post;
-      return {
-        ...post,
-        title: translation.title,
-        slug: translation.slug,
-        excerpt: translation.excerpt,
-        content: translation.content,
-        metaTitle: translation.metaTitle,
-        metaDescription: translation.metaDescription,
-      };
-    },
-
-    // ============================================
-    // GENERATE TRANSLATED SLUG
-    // ============================================
-    generateTranslatedSlug: (baseSlug, lang) => {
-      return `${baseSlug}-${lang}`;
-    },
-
-    // ============================================
-    // TRANSLATE POST — calls MyMemory API then saves
-    // translations to the backend.
-    // ============================================
-    translatePost: async (id: string) => {
-      const post = get().posts.find(p => p.id === id);
-      if (!post) return;
-      try {
-        const translations = await autoTranslateBlogPostAsync(
-          post.title,
-          post.excerpt,
-          post.content,
-          post.metaTitle,
-          post.metaDescription,
-          post.slug
-        );
-        set(state => ({
-          posts: state.posts.map(p => p.id === id ? { ...p, translations } : p),
-        }));
-        // Persist translations to backend (fire-and-forget, don't block UI)
-        api.patch(`/blog/${id}`, { translations }).catch(() => {});
-      } catch (err) {
-        console.error('Background translation failed:', err);
-      }
-    },
-  })
-);
+  getTranslatedPost: (post, lang) => {
+    if (lang === 'en') return post;
+    const t = post.translations?.[lang];
+    if (!t) return post;
+    return {
+      ...post,
+      title: t.title || post.title,
+      slug: t.slug || post.slug,
+      excerpt: t.excerpt || post.excerpt,
+      content: t.content || post.content,
+      metaTitle: t.metaTitle || post.metaTitle,
+      metaDescription: t.metaDescription || post.metaDescription,
+    };
+  },
+}));
