@@ -30,48 +30,74 @@ const TRANSLATE_LANGS = [
   { code: 'mr' },
 ];
 
-// ─── Helper: translate a post into all languages ─────────────────────────────
+// How many languages to translate at the same time.
+// 5 parallel requests is a safe balance between speed and rate-limit safety.
+const LANG_CONCURRENCY = 5;
+
+// ─── Translate one language ───────────────────────────────────────────────────
+async function translateOneLanguage(post, code, baseSlug, metaTitle, metaDescription) {
+  const [tTitle, tExcerpt, tMeta, tDesc, tContent] = await Promise.all([
+    translateText(post.title, code),
+    translateText(post.excerpt, code),
+    translateText(metaTitle, code),
+    translateText(metaDescription, code),
+    translateHtmlContent(post.content, code),
+  ]);
+
+  return {
+    title:           tTitle    || post.title,
+    slug:            `${baseSlug}-${code}`,
+    excerpt:         tExcerpt  || post.excerpt,
+    content:         tContent  || post.content,
+    metaTitle:       tMeta     || metaTitle,
+    metaDescription: tDesc     || metaDescription,
+  };
+}
+
+// ─── Helper: translate a post into all languages (parallel batches) ───────────
 async function translatePostObject(post) {
   const baseSlug = post.slug;
   const metaTitle = post.metaTitle || post.title;
   const metaDescription = post.metaDescription || post.excerpt;
   const translations = {};
 
-  for (const { code } of TRANSLATE_LANGS) {
-    try {
-      // Short plain-text fields: title, excerpt, meta
-      const [tTitle, tExcerpt, tMeta, tDesc] = await Promise.all([
-        translateText(post.title, code),
-        translateText(post.excerpt, code),
-        translateText(metaTitle, code),
-        translateText(metaDescription, code),
-      ]);
+  // Process languages in parallel batches to stay well under the HTTP timeout.
+  // Example: 15 langs at LANG_CONCURRENCY=5 → 3 rounds of 5 parallel calls.
+  for (let i = 0; i < TRANSLATE_LANGS.length; i += LANG_CONCURRENCY) {
+    const batch = TRANSLATE_LANGS.slice(i, i + LANG_CONCURRENCY);
 
-      // Content: translate block-by-block to preserve paragraph/heading structure
-      const tContent = await translateHtmlContent(post.content, code);
+    const results = await Promise.allSettled(
+      batch.map(({ code }) =>
+        translateOneLanguage(post, code, baseSlug, metaTitle, metaDescription)
+          .then(translation => ({ code, translation }))
+      )
+    );
 
-      translations[code] = {
-        title:           tTitle           || post.title,
-        slug:            `${baseSlug}-${code}`,
-        excerpt:         tExcerpt         || post.excerpt,
-        content:         tContent         || post.content,
-        metaTitle:       tMeta            || metaTitle,
-        metaDescription: tDesc            || metaDescription,
-      };
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const { code, translation } = result.value;
+        translations[code] = translation;
+        console.log(`[translate] ✓ ${code}`);
+      } else {
+        // Find which code failed so we can log and fallback
+        const idx = results.indexOf(result);
+        const code = batch[idx]?.code || '?';
+        console.error(`[translate] ✗ ${code}:`, result.reason?.message);
+        // Fallback: keep English so the post is still readable in that language
+        translations[code] = {
+          title: post.title,
+          slug: `${baseSlug}-${code}`,
+          excerpt: post.excerpt,
+          content: post.content,
+          metaTitle,
+          metaDescription,
+        };
+      }
+    }
 
-      // Pause between languages to respect rate limits
-      await new Promise(r => setTimeout(r, 300));
-    } catch (err) {
-      console.error(`[translate] Failed for lang ${code}:`, err.message);
-      // Fallback: keep English content so the post is still readable
-      translations[code] = {
-        title:           post.title,
-        slug:            `${baseSlug}-${code}`,
-        excerpt:         post.excerpt,
-        content:         post.content,
-        metaTitle,
-        metaDescription,
-      };
+    // Small pause between batches to be polite to Google's free endpoint
+    if (i + LANG_CONCURRENCY < TRANSLATE_LANGS.length) {
+      await new Promise(r => setTimeout(r, 400));
     }
   }
 
