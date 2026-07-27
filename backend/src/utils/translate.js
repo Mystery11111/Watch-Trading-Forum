@@ -1,12 +1,15 @@
 // ============================================
 // TRANSLATION UTILITY
 // Google Translate free endpoint — no API key required.
-// Uses Node's built-in https module (works on all Node versions, 8s timeout).
+// Uses Node's built-in https module (works on all Node versions, 15s timeout).
 // ============================================
 
 const https = require('https');
 
 const MAX_CHARS = 4800;
+// Separator used to batch multiple blocks into one API call.
+// Chosen to be highly unlikely to appear in translated text.
+const BLOCK_SEP = ' ||||| ';
 
 // ─── Strip HTML tags from a single block's inner content ─────────────────────
 function stripHtml(html) {
@@ -40,7 +43,7 @@ function textToHtml(text) {
 }
 
 // ─── HTTPS GET with timeout ───────────────────────────────────────────────────
-function httpsGet(url, timeoutMs = 8000) {
+function httpsGet(url, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, (res) => {
       let raw = '';
@@ -123,52 +126,104 @@ async function translateText(text, targetLang) {
   return results.join(' ');
 }
 
-// ─── Translate HTML content block-by-block ────────────────────────────────────
-// Finds every block element (h1–h6, p, li, blockquote), translates ONLY its
-// plain-text content, then reassembles clean HTML. This keeps one <p> per
-// paragraph (and headings as headings) so spacing matches the English version.
+// ─── Group block texts into batches that each fit under MAX_CHARS ─────────────
+function groupIntoBatches(blockTexts) {
+  const batches = []; // each batch = array of { originalIndex, text }
+  let current = [];
+  let currentLen = 0;
+
+  for (let i = 0; i < blockTexts.length; i++) {
+    const text = blockTexts[i];
+    const sepLen = current.length > 0 ? BLOCK_SEP.length : 0;
+    const wouldBe = currentLen + sepLen + text.length;
+
+    if (wouldBe > MAX_CHARS && current.length > 0) {
+      batches.push(current);
+      current = [{ originalIndex: i, text }];
+      currentLen = text.length;
+    } else {
+      current.push({ originalIndex: i, text });
+      currentLen = wouldBe;
+    }
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+// ─── Translate HTML content block-by-block (BATCHED) ─────────────────────────
+// Collects all block texts, batches them under MAX_CHARS, sends each batch as
+// ONE API call, then reassembles. This reduces 50 API calls to ~2-4 calls for
+// a typical long blog post.
 async function translateHtmlContent(html, targetLang) {
   if (!html || !html.trim()) return html;
   if (targetLang === 'en') return html;
 
-  // Match block-level tags (with optional inline attrs we discard in output)
   const blockRe = /<(h[1-6]|p|li|blockquote)(\s[^>]*)?>(\s*)([\s\S]*?)<\/\1>/gi;
   const matches = [...html.matchAll(blockRe)];
 
   if (matches.length === 0) {
-    // No block elements found — plain text fallback
+    // No block elements — plain text fallback
     const plain = stripHtml(html);
     const translated = await translateText(plain, targetLang);
     return textToHtml(translated);
   }
 
-  // Translate each block's text and record replacements
-  const replacements = [];
+  // Extract plain text from every block
+  const blockTexts = matches.map(m => stripHtml(m[4] || ''));
 
-  for (const match of matches) {
-    const [fullMatch, tag, , , inner] = match;
-    const innerText = stripHtml(inner || '');
+  // Group into batches that each fit in one API call
+  const batches = groupIntoBatches(blockTexts);
 
-    if (!innerText.trim()) {
-      // Empty block — keep as-is (blank paragraph spacer etc.)
-      replacements.push({ index: match.index, length: fullMatch.length, replacement: `<${tag}></${tag}>` });
-      continue;
+  // Translate each batch (sequential batches, but far fewer calls than before)
+  const translatedTexts = new Array(blockTexts.length);
+
+  for (const batch of batches) {
+    if (batch.length === 0) continue;
+
+    // Join all texts in this batch with the separator
+    const joined = batch.map(b => b.text).join(BLOCK_SEP);
+
+    let parts;
+    try {
+      const result = await translateChunk(joined, targetLang);
+      parts = result.split(BLOCK_SEP);
+    } catch (err) {
+      console.warn('[translateHtml] Batch failed, falling back to individual:', err.message);
+      parts = [];
     }
 
-    const translated = await translateText(innerText, targetLang);
-    replacements.push({
-      index: match.index,
-      length: fullMatch.length,
-      // Clean tag — no inline styles, just the translated text
-      replacement: `<${tag}>${translated || innerText}</${tag}>`,
-    });
-
-    // Small pause between blocks to avoid rate-limiting
-    await new Promise(r => setTimeout(r, 120));
+    if (parts.length === batch.length) {
+      // Separator survived — assign each part back to its block
+      for (let i = 0; i < batch.length; i++) {
+        translatedTexts[batch[i].originalIndex] = parts[i].trim();
+      }
+    } else {
+      // Separator was mangled — fall back to translating this batch individually
+      for (const { originalIndex, text } of batch) {
+        if (!text.trim()) {
+          translatedTexts[originalIndex] = '';
+        } else {
+          translatedTexts[originalIndex] = await translateChunk(text, targetLang);
+        }
+      }
+    }
   }
 
   // Rebuild HTML string by applying replacements in reverse order
-  // so earlier indexes aren't shifted by later replacements
+  const replacements = matches.map((match, i) => {
+    const [fullMatch, tag] = match;
+    const originalText = blockTexts[i];
+    const translatedText = translatedTexts[i];
+
+    return {
+      index: match.index,
+      length: fullMatch.length,
+      replacement: originalText.trim()
+        ? `<${tag}>${translatedText || originalText}</${tag}>`
+        : `<${tag}></${tag}>`,
+    };
+  });
+
   let result = html;
   for (let i = replacements.length - 1; i >= 0; i--) {
     const { index, length, replacement } = replacements[i];
