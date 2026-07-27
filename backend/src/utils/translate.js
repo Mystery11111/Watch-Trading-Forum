@@ -211,7 +211,7 @@ async function translateHtmlContent(html, targetLang) {
 
   // Rebuild HTML string by applying replacements in reverse order
   const replacements = matches.map((match, i) => {
-    const [fullMatch, tag] = match;
+    const [fullMatch, tag, attrs] = match;
     const originalText = blockTexts[i];
     const translatedText = translatedTexts[i];
 
@@ -219,8 +219,8 @@ async function translateHtmlContent(html, targetLang) {
       index: match.index,
       length: fullMatch.length,
       replacement: originalText.trim()
-        ? `<${tag}>${translatedText || originalText}</${tag}>`
-        : `<${tag}></${tag}>`,
+        ? `<${tag}>${attrs || ''}>${translatedText || originalText}</${tag}>`
+        : `<${tag}${attrs || ''}></${tag}>`,
     };
   });
 
