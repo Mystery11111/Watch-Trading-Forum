@@ -211,17 +211,16 @@ async function translateHtmlContent(html, targetLang) {
 
   // Rebuild HTML string by applying replacements in reverse order
   const replacements = matches.map((match, i) => {
-    const [fullMatch, tag, attrs] = match;
+    const [fullMatch, tag] = match;
     const originalText = blockTexts[i];
     const translatedText = translatedTexts[i];
 
     return {
       index: match.index,
       length: fullMatch.length,
-      // Preserve original tag attributes (e.g. margin-bottom, line-height inline styles)
       replacement: originalText.trim()
-        ? `<${tag}${attrs || ''}>${translatedText || originalText}</${tag}>`
-        : `<${tag}${attrs || ''}></${tag}>`,
+        ? `<${tag}>${translatedText || originalText}</${tag}>`
+        : `<${tag}></${tag}>`,
     };
   });
 
