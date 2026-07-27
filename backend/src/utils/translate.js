@@ -219,7 +219,7 @@ async function translateHtmlContent(html, targetLang) {
       index: match.index,
       length: fullMatch.length,
       replacement: originalText.trim()
-        ? `<${tag}>${attrs || ''}>${translatedText || originalText}</${tag}>`
+        ? `<${tag}${attrs || ''}>${translatedText || originalText}</${tag}>`
         : `<${tag}${attrs || ''}></${tag}>`,
     };
   });
