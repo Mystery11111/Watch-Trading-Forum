@@ -241,10 +241,11 @@ function hash(value) {
 
 function withBrand(lead) {
   const clean = String(lead).replace(/\s+/g, ' ').trim();
-  const full = `${clean}${SUFFIX}`;
-  if (full.length <= 60) return full;
+  if (`${clean}${SUFFIX}`.length <= 60) return `${clean}${SUFFIX}`;
   const room = 60 - SUFFIX.length;
-  const cut = clean.slice(0, room).replace(/[\s,:|&-]+$/g, '').trim();
+  let cut = clean.slice(0, room);
+  if (cut.length < clean.length) cut = cut.replace(/\s+\S*$/, '');
+  cut = cut.replace(/[\s,:|&-]+$/g, '').trim();
   return `${cut}${SUFFIX}`;
 }
 
@@ -270,24 +271,39 @@ function pickDescription(candidates) {
   return null;
 }
 
+const SHORT_NAME = {
+  'United Arab Emirates': 'UAE',
+  'Australian Capital Territory': 'ACT',
+  'Newfoundland and Labrador': 'Newfoundland',
+  'Prince Edward Island': 'PEI',
+  'Northwest Territories': 'NWT',
+  'Myanmar (Burma)': 'Myanmar',
+};
+
 function placeTitle(name, tag) {
-  if (name === 'United Arab Emirates' && tag) {
-    return `UAE, ${tag}: Buy, Sell & Trade${SUFFIX}`;
+  const names = SHORT_NAME[name] ? [name, SHORT_NAME[name]] : [name];
+  const options = [];
+  for (const label of names) {
+    if (tag) {
+      options.push(
+        `${label}, ${tag}: Buy & Sell Watches`,
+        `${label}, ${tag}: Buy, Sell & Trade`,
+        `${label}, ${tag}: Buy & Sell`,
+        `${label}: Buy & Sell`,
+        `${label}, ${tag} Watch Forum`,
+      );
+    } else {
+      options.push(
+        `${label}: Buy, Sell & Discuss`,
+        `${label} Forum: Buy & Sell`,
+        `${label} Watches`,
+        label,
+      );
+    }
   }
-  const options = tag
-    ? [
-        `${name}, ${tag}: Buy & Sell Watches`,
-        `${name}, ${tag}: Buy, Sell & Trade`,
-        `${name} ${tag}: Buy & Sell`,
-        `${name}, ${tag} Watch Forum`,
-        `${tag}: ${name} Watches`,
-      ]
-    : [
-        `${name}: Buy, Sell & Discuss`,
-        `${name} Forum: Buy & Sell`,
-        `${name} Watches`,
-        name,
-      ];
+  for (const lead of options) {
+    if (`${lead}${SUFFIX}`.length <= 60 && !/\s\S{1,3}$/.test(lead.slice(-4))) return `${lead}${SUFFIX}`;
+  }
   for (const lead of options) {
     if (`${lead}${SUFFIX}`.length <= 60) return `${lead}${SUFFIX}`;
   }
@@ -317,7 +333,7 @@ function regionalDescription(name, region, slug) {
   } else {
     candidates = [
       `Buy, sell and discuss luxury watches in ${name}, ${label}. Compare local prices and photos with members, including UK collectors. Join and post a listing.`,
-      `${name} is the ${label} board for buying and selling luxury watches. Ask about dealers and references, then join free and post a listing.`,
+      `${name} buyers and sellers list luxury watches across ${label}. Ask about local dealers and references, then join free and post a listing.`,
       `Looking for a watch in ${name}? Talk ${label} members, and collectors in the UK, before you buy or sell. Join the forum and post today.`,
       `Trade watches in ${name}, ${label}. Share wrist shots, sold prices and honest advice. Join Watch Trading Forums and post your listing.`,
       `Collectors in ${name} buy, sell and discuss watches with members in ${label} and the UK. Check a reference, then join and post a thread.`,
