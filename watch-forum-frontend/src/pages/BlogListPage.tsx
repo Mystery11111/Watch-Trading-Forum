@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Clock, User, Search, Plus, Eye, Tag } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
+import { BLOG_DESCRIPTION, BLOG_TITLE, SITE_URL } from '@/lib/site';
 
 export const BlogListPage: React.FC = () => {
   const { posts, searchQuery, setSearchQuery, getTranslatedPost } = useBlogStore();
@@ -21,12 +22,12 @@ export const BlogListPage: React.FC = () => {
 
   // SEO: Update page title and meta tags
   useEffect(() => {
-    document.title = 'Watch Trading Blog | Expert Guides, Reviews & Industry Insights';
+    document.title = BLOG_TITLE;
     
     // Update meta description
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) {
-      metaDesc.setAttribute('content', 'Discover expert watch trading guides, luxury watch reviews, market insights, and investment tips. Learn about Rolex, Patek Philippe, Audemars Piguet and more.');
+      metaDesc.setAttribute('content', BLOG_DESCRIPTION);
     }
     
     // Update canonical URL
@@ -36,7 +37,7 @@ export const BlogListPage: React.FC = () => {
       canonical.setAttribute('rel', 'canonical');
       document.head.appendChild(canonical);
     }
-    canonical.setAttribute('href', 'https://watchtradingforums.com/blog');
+    canonical.setAttribute('href', `${SITE_URL}/blog`);
   }, []);
 
   // Get translated posts based on current language
@@ -82,13 +83,13 @@ export const BlogListPage: React.FC = () => {
     '@type': 'Blog',
     name: 'Watch Trading Forums Blog',
     description: 'Expert watch trading guides, luxury watch reviews, and industry insights',
-    url: 'https://watchtradingforums.com/blog',
+    url: `${SITE_URL}/blog`,
     publisher: {
       '@type': 'Organization',
       name: 'Watch Trading Forums',
       logo: {
         '@type': 'ImageObject',
-        url: 'https://watchtradingforums.com/logo.png'
+        url: `${SITE_URL}/logo.png`
       }
     },
     blogPost: filteredPosts.map(post => ({
@@ -101,7 +102,7 @@ export const BlogListPage: React.FC = () => {
       },
       datePublished: post.publishedAt,
       dateModified: post.updatedAt,
-      url: `https://watchtradingforums.com/blog/${post.slug}`,
+      url: `${SITE_URL}/blog/${post.slug}`,
       keywords: post.tags.join(', ')
     }))
   };
@@ -109,14 +110,19 @@ export const BlogListPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Helmet>
-        <title>Watch Trading Blog | Expert Guides, Reviews & Industry Insights</title>
-        <meta name="description" content="Discover expert watch trading guides, luxury watch reviews, market insights, and investment tips. Learn about Rolex, Patek Philippe, Audemars Piguet and more." />
+        <title>{BLOG_TITLE}</title>
+        <meta name="description" content={BLOG_DESCRIPTION} />
         <meta name="keywords" content="watch trading, luxury watches, Rolex, Patek Philippe, watch investment, watch collecting, horology" />
-        <link rel="canonical" href="https://watchtradingforums.com/blog" />
+        <link rel="canonical" href={`${SITE_URL}/blog`} />
         <meta property="og:title" content="Watch Trading Blog | Expert Guides & Reviews" />
         <meta property="og:description" content="Expert watch trading guides, luxury watch reviews, and industry insights" />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://watchtradingforums.com/blog" />
+        <meta property="og:url" content={`${SITE_URL}/blog`} />
+        <meta property="og:image" content={`${SITE_URL}/opengraph.jpg`} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={BLOG_TITLE} />
+        <meta name="twitter:description" content={BLOG_DESCRIPTION} />
+        <meta name="twitter:image" content={`${SITE_URL}/opengraph.jpg`} />
         <script type="application/ld+json">
           {JSON.stringify(structuredData)}
         </script>

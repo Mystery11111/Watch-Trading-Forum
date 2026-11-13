@@ -6,6 +6,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { PageMeta } from '@/components/PageMeta';
+import { SITE_NAME, SITE_URL } from '@/lib/site';
 import { useForumStore } from '@/stores/forumStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -192,8 +194,38 @@ export const ThreadPage: React.FC = () => {
   const canComment = isAuthenticated && !thread.isLocked;
   const canModerateThread = canModerate();
 
+  const threadDescription = (thread.content || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160) || `Discussion: ${thread.title} on ${SITE_NAME}`;
+  const threadCanonical = `${SITE_URL}/thread/${thread.id}`;
+  const threadJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'DiscussionForumPosting',
+    headline: thread.title,
+    text: threadDescription,
+    url: threadCanonical,
+    datePublished: thread.createdAt,
+    dateModified: thread.updatedAt,
+    author: { '@type': 'Person', name: thread.authorName },
+    interactionStatistic: {
+      '@type': 'InteractionCounter',
+      interactionType: 'https://schema.org/CommentAction',
+      userInteractionCount: thread.commentCount || 0,
+    },
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <PageMeta
+        title={`${thread.title} | ${SITE_NAME}`}
+        description={threadDescription}
+        canonical={threadCanonical}
+        ogType="article"
+        image={thread.images?.[0]}
+        jsonLd={threadJsonLd}
+      />
       {/* ============================================
           THREAD HEADER
           ============================================ */}

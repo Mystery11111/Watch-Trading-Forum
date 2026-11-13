@@ -5,6 +5,8 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { PageMeta } from '@/components/PageMeta';
+import { HOME_DESCRIPTION, HOME_TITLE, SITE_NAME, SITE_URL } from '@/lib/site';
 import { useForumStore } from '@/stores/forumStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import { SectionCard } from '@/components/forum/SectionCard';
@@ -25,8 +27,34 @@ export const HomePage: React.FC = () => {
   const totalThreads = threads.length;
   const totalPosts = threads.reduce((sum, t) => sum + t.commentCount, 0) + totalThreads;
 
+  const homeJsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'WebSite',
+        name: SITE_NAME,
+        url: `${SITE_URL}/`,
+        description: HOME_DESCRIPTION,
+        publisher: { '@id': `${SITE_URL}/#organization` },
+      },
+      {
+        '@type': 'Organization',
+        '@id': `${SITE_URL}/#organization`,
+        name: SITE_NAME,
+        url: `${SITE_URL}/`,
+        logo: `${SITE_URL}/logo.png`,
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <PageMeta
+        title={HOME_TITLE}
+        description={HOME_DESCRIPTION}
+        canonical={`${SITE_URL}/`}
+        jsonLd={homeJsonLd}
+      />
       {/* ============================================
           HERO SECTION
           ============================================ */}

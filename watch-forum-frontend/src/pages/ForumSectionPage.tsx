@@ -10,6 +10,8 @@
 
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { PageMeta } from '@/components/PageMeta';
+import { SITE_NAME, SITE_URL } from '@/lib/site';
 import { useForumStore } from '@/stores/forumStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ThreadCard } from '@/components/forum/ThreadCard';
@@ -70,6 +72,12 @@ export const ForumSectionPage: React.FC = () => {
   if (!section) {
     return (
       <div className="container mx-auto px-4 py-8">
+        <PageMeta
+          title={`Section not found | ${SITE_NAME}`}
+          description="That forum section does not exist."
+          canonical={`${SITE_URL}/`}
+          robots="noindex, nofollow"
+        />
         <div className="text-center py-16">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Section Not Found</h1>
           <p className="text-gray-600 mb-6">The forum section you're looking for doesn't exist.</p>
@@ -85,6 +93,11 @@ export const ForumSectionPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <PageMeta
+        title={`${section.name} | ${SITE_NAME}`}
+        description={section.description}
+        canonical={`${SITE_URL}/forum/${section.slug}`}
+      />
       <div className="bg-white border-b border-gray-200 py-6">
         <div className="container mx-auto px-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">

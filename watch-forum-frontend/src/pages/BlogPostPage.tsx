@@ -10,6 +10,7 @@ import { Helmet } from 'react-helmet-async';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useBlogStore } from '@/stores/blogStore';
 import { useAuthStore } from '@/stores/authStore';
+import { SITE_URL } from '@/lib/site';
 import { SUPPORTED_LANGUAGES } from '@/stores/languageStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -133,10 +134,9 @@ export const BlogPostPage: React.FC = () => {
   const englishSlug = originalPost.slug;
 
   // Canonical URL for this language version
-  const siteOrigin = 'https://watch-trading-forum.onrender.com';
   const canonicalUrl = displayLang === 'en'
-    ? `${siteOrigin}/blog/${englishSlug}`
-    : `${siteOrigin}/blog/${displayLang}/${post.slug}`;
+    ? `${SITE_URL}/blog/${englishSlug}`
+    : `${SITE_URL}/blog/${displayLang}/${post.slug}`;
 
   // SEO meta — pre-translated
   const seoTitle = post.metaTitle || post.title;
@@ -156,8 +156,15 @@ export const BlogPostPage: React.FC = () => {
         {originalPost.featuredImage && (
           <meta property="og:image" content={originalPost.featuredImage} />
         )}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={seoTitle} />
+        <meta name="twitter:description" content={seoDescription} />
+        {originalPost.featuredImage && (
+          <meta name="twitter:image" content={originalPost.featuredImage} />
+        )}
         {/* hreflang for English */}
-        <link rel="alternate" hrefLang="en" href={`${siteOrigin}/blog/${englishSlug}`} />
+        <link rel="alternate" hrefLang="en" href={`${SITE_URL}/blog/${englishSlug}`} />
+        <link rel="alternate" hrefLang="x-default" href={`${SITE_URL}/blog/${englishSlug}`} />
         {/* hreflang for each available translation */}
         {availableTranslations.map(code => {
           const tSlug = originalPost.translations![code].slug;
@@ -166,22 +173,35 @@ export const BlogPostPage: React.FC = () => {
               key={code}
               rel="alternate"
               hrefLang={code === 'zh' ? 'zh-CN' : code}
-              href={`${siteOrigin}/blog/${code}/${tSlug}`}
+              href={`${SITE_URL}/blog/${code}/${tSlug}`}
             />
           );
         })}
         <script type="application/ld+json">
           {JSON.stringify({
             '@context': 'https://schema.org',
-            '@type': 'BlogPosting',
-            headline: seoTitle,
-            description: seoDescription,
-            url: canonicalUrl,
-            datePublished: originalPost.publishedAt,
-            dateModified: originalPost.updatedAt,
-            author: { '@type': 'Person', name: originalPost.authorName },
-            image: originalPost.featuredImage,
-            keywords: originalPost.tags.join(', '),
+            '@graph': [
+              {
+                '@type': 'BlogPosting',
+                headline: seoTitle,
+                description: seoDescription,
+                url: canonicalUrl,
+                mainEntityOfPage: canonicalUrl,
+                datePublished: originalPost.publishedAt,
+                dateModified: originalPost.updatedAt,
+                author: { '@type': 'Person', name: originalPost.authorName },
+                image: originalPost.featuredImage,
+                keywords: originalPost.tags.join(', '),
+              },
+              {
+                '@type': 'BreadcrumbList',
+                itemListElement: [
+                  { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_URL}/` },
+                  { '@type': 'ListItem', position: 2, name: 'Blog', item: `${SITE_URL}/blog` },
+                  { '@type': 'ListItem', position: 3, name: post.title, item: canonicalUrl },
+                ],
+              },
+            ],
           })}
         </script>
       </Helmet>
