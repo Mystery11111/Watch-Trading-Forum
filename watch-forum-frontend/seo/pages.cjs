@@ -6,6 +6,7 @@ const {
   BLOG_DESCRIPTION,
 } = require('../site-url.cjs');
 const { absoluteUrl, articleBody, clip, escapeHtml, stripTags, textPage } = require('./html.cjs');
+const { metaForSection } = require('./meta.cjs');
 
 const HREFLANG = { zh: 'zh-CN' };
 const TRANSLATION_CODES = ['zh', 'hi', 'es', 'fr', 'ar', 'bn', 'pt', 'ru', 'nl', 'ur', 'id', 'de', 'ja', 'pcm', 'mr'];
@@ -265,17 +266,18 @@ function sectionPage(siteUrl, slug, sections, threads) {
       ]),
     });
   }
-  const description = section.description || `Discuss ${section.name} on ${SITE_NAME}.`;
+  const parent = (sections || []).find((item) => item.id && item.id === section.parentId);
+  const seo = metaForSection(section, parent);
   const related = (threads || []).filter((thread) => thread.sectionId && section.id && thread.sectionId === section.id);
   const links = related.slice(0, 30).map((thread) => ({
     href: `${siteUrl}/thread/${encodeURIComponent(thread.id || thread._id)}`,
     text: thread.title,
   }));
   return basePage(siteUrl, {
-    title: `${section.name} | ${SITE_NAME}`,
-    description: clip(description, 160),
+    title: seo.title,
+    description: seo.description,
     canonical: `${siteUrl}/forum/${encodeURIComponent(section.slug)}`,
-    bodyHtml: textPage(section.name, [description], links),
+    bodyHtml: textPage(section.name, [seo.description], links),
   });
 }
 

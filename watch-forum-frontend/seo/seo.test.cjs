@@ -10,6 +10,7 @@ const { matchRoute, renderPath } = require('./pages.cjs');
 const { loadSections, parseSections } = require('./sections.cjs');
 const { buildSitemap, robotsTxt } = require('./sitemap.cjs');
 const { resolveSiteUrl } = require('../site-url.cjs');
+const { BLOG_DESCRIPTION, BLOG_TITLE, HOME_DESCRIPTION, HOME_TITLE, metaForSection } = require('./meta.cjs');
 const { createApp } = require('../server.cjs');
 
 const SITE = 'https://watchtradingforums.com';
@@ -105,6 +106,37 @@ test('forum section parser keeps clickable sections and escaped names', () => {
   assert.strictEqual(parsed[0].isClickable, false);
 });
 
+test('every forum section has a unique title and description in range', () => {
+  const sections = loadSections();
+  const byId = Object.fromEntries(sections.map((section) => [section.id, section]));
+  const titles = new Set();
+  const descriptions = new Set();
+  for (const section of sections) {
+    const parent = section.parentId ? byId[section.parentId] : null;
+    const seo = metaForSection(section, parent);
+    assert.ok(seo.title.length <= 60, `${section.slug} title is ${seo.title.length}`);
+    assert.ok(
+      seo.description.length >= 140 && seo.description.length <= 160,
+      `${section.slug} description is ${seo.description.length}`,
+    );
+    assert.ok(!titles.has(seo.title), `${section.slug} repeats title ${seo.title}`);
+    assert.ok(!descriptions.has(seo.description), `${section.slug} repeats description`);
+    titles.add(seo.title);
+    descriptions.add(seo.description);
+  }
+  assert.ok(HOME_TITLE.length <= 60);
+  assert.ok(HOME_DESCRIPTION.length >= 140 && HOME_DESCRIPTION.length <= 160);
+  assert.ok(BLOG_TITLE.length <= 60);
+  assert.ok(BLOG_DESCRIPTION.length >= 140 && BLOG_DESCRIPTION.length <= 160);
+  const london = metaForSection(
+    sections.find((section) => section.slug === 'london'),
+    byId['sec-uk'],
+  );
+  assert.strictEqual(london.title, 'London, UK: Buy & Sell Watches | Watch Trading Forums');
+  assert.ok(london.description.includes('London'));
+  assert.ok(/join|post/i.test(london.description));
+});
+
 test('routes do not treat public blog slugs as the editor', () => {
   assert.strictEqual(matchRoute('/blog/new').type, 'private');
   assert.strictEqual(matchRoute('/blog/edit/rolex-guide').type, 'private');
@@ -115,13 +147,16 @@ test('routes do not treat public blog slugs as the editor', () => {
 
 test('rendered pages use the production origin and include structured data', () => {
   const home = pageFor('/');
-  assert.strictEqual(home.title, 'Watch Trading Forums | Buy, Sell & Discuss Luxury Watches');
+  assert.strictEqual(home.title, HOME_TITLE);
+  assert.strictEqual(home.description, HOME_DESCRIPTION);
   assert.strictEqual(home.canonical, `${SITE}/`);
   assert.ok(home.jsonLd['@graph'].some((node) => node['@type'] === 'WebSite'));
   assert.ok(home.jsonLd['@graph'].some((node) => node['@type'] === 'Organization'));
 
   const blog = pageFor('/blog');
   assert.strictEqual(blog.canonical, `${SITE}/blog`);
+  assert.strictEqual(blog.title, BLOG_TITLE);
+  assert.strictEqual(blog.description, BLOG_DESCRIPTION);
 
   const post = pageFor('/blog/rolex-guide');
   assert.strictEqual(post.canonical, `${SITE}/blog/rolex-guide`);
@@ -137,7 +172,7 @@ test('rendered pages use the production origin and include structured data', () 
   assert.ok(french.bodyHtml.includes('Article français'));
 
   const section = pageFor('/forum/rolex-watches');
-  assert.strictEqual(section.title, 'Rolex Watches | Watch Trading Forums');
+  assert.strictEqual(section.title, 'Rolex Watches: Buy, Sell & Discuss | Watch Trading Forums');
   assert.ok(section.bodyHtml.includes('Daytona for sale'));
 
   const thread = pageFor('/thread/thread-1');
@@ -228,7 +263,7 @@ test('server responses include SEO tags, sitemap XML, and host policy', async ()
     assert.match(home.headers['content-type'], /text\/html/);
     assert.strictEqual(home.headers['strict-transport-security'], 'max-age=31536000; includeSubDomains');
     assert.strictEqual(home.headers['x-robots-tag'], undefined);
-    assert.ok(home.body.includes('<title>Watch Trading Forums | Buy, Sell &amp; Discuss Luxury Watches</title>'));
+    assert.ok(home.body.includes('<title>Buy, Sell &amp; Discuss Watches | Watch Trading Forums</title>'));
     assert.ok(home.body.includes('https://watchtradingforums.com/'));
     assert.ok(home.body.includes('"@type":"WebSite"') || home.body.includes('"@type": "WebSite"'));
     assert.ok(!home.body.includes('onrender.com'));
@@ -292,7 +327,7 @@ test('server responses include SEO tags, sitemap XML, and host policy', async ()
       },
     });
     assert.strictEqual(proxied.status, 200);
-    assert.ok(proxied.body.includes('Watch Trading Forums | Buy, Sell'));
+    assert.ok(proxied.body.includes('Buy, Sell &amp; Discuss Watches'));
 
     const local = await request(server, { headers: { host: 'localhost:4173' } });
     assert.strictEqual(local.status, 200);

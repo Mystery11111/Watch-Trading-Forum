@@ -1,3 +1,10 @@
+declare module '../../seo/meta.cjs' {
+  export function metaForSection(
+    section: { slug: string; name: string; description?: string },
+    parent?: { slug?: string; name?: string } | null,
+  ): { title: string; description: string };
+}
+
 declare module '../../site-url.cjs' {
   export const DEFAULT_SITE_URL: string;
   export const DEFAULT_API_BASE: string;

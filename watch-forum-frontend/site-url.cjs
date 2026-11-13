@@ -7,12 +7,12 @@ const DEFAULT_SITE_URL = 'https://watchtradingforums.com';
 const DEFAULT_API_BASE = 'https://api.watchtradingforums.com/api';
 
 const SITE_NAME = 'Watch Trading Forums';
-const HOME_TITLE = 'Watch Trading Forums | Buy, Sell & Discuss Luxury Watches';
-const HOME_DESCRIPTION =
-  'The premier community for watch enthusiasts to buy, sell, trade, and discuss timepieces from around the world.';
-const BLOG_TITLE = 'Watch Trading Blog | Expert Guides, Reviews & Industry Insights';
-const BLOG_DESCRIPTION =
-  'Discover expert watch trading guides, luxury watch reviews, market insights, and investment tips. Learn about Rolex, Patek Philippe, Audemars Piguet and more.';
+const {
+  HOME_TITLE,
+  HOME_DESCRIPTION,
+  BLOG_TITLE,
+  BLOG_DESCRIPTION,
+} = require('./seo/meta.cjs');
 
 function resolveSiteUrl(env) {
   const source = env || {};
