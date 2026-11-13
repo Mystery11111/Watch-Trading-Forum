@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /messages
+Disallow: /admin
+Disallow: /new-thread
+Disallow: /blog/new$
+Disallow: /blog/new/
+Disallow: /blog/edit$
+Disallow: /blog/edit/
+
+Sitemap: https://watchtradingforums.com/sitemap.xml

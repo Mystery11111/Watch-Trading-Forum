@@ -4,6 +4,7 @@
 // ============================================
 
 import React, { useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Navigation } from '@/components/Navigation';
 import { HomePage } from '@/pages/HomePage';
@@ -79,6 +80,7 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
+        <HostRobots />
         {/* Easter Egg - Falling Watches */}
         <FallingWatchesEasterEgg />
 
@@ -156,6 +158,22 @@ function App() {
         </footer>
       </div>
     </Router>
+  );
+}
+
+function HostRobots() {
+  const [onRenderHost, setOnRenderHost] = React.useState(false);
+
+  useEffect(() => {
+    setOnRenderHost(window.location.hostname.endsWith('.onrender.com'));
+    document.head.querySelectorAll('[data-seo-server]').forEach((node) => node.remove());
+  }, []);
+
+  if (!onRenderHost) return null;
+  return (
+    <Helmet>
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
   );
 }
 

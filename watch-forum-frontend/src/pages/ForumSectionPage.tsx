@@ -10,6 +10,8 @@
 
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { PageMeta } from '@/components/PageMeta';
+import { metaForSection, SITE_NAME, SITE_URL } from '@/lib/site';
 import { useForumStore } from '@/stores/forumStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ThreadCard } from '@/components/forum/ThreadCard';
@@ -24,6 +26,7 @@ export const ForumSectionPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const {
     getSectionBySlug,
+    getSectionById,
     getSubsections,
     getThreadsBySection,
     getThreadsBySectionWithDescendants,
@@ -70,6 +73,12 @@ export const ForumSectionPage: React.FC = () => {
   if (!section) {
     return (
       <div className="container mx-auto px-4 py-8">
+        <PageMeta
+          title={`Section not found | ${SITE_NAME}`}
+          description="That forum section does not exist."
+          canonical={`${SITE_URL}/`}
+          robots="noindex, nofollow"
+        />
         <div className="text-center py-16">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Section Not Found</h1>
           <p className="text-gray-600 mb-6">The forum section you're looking for doesn't exist.</p>
@@ -82,9 +91,16 @@ export const ForumSectionPage: React.FC = () => {
   // Live counts for the section header — works for leaf and parent sections.
   const headerThreadCount = getAggregatedThreadCount(section.id);
   const headerPostCount = getAggregatedPostCount(section.id);
+  const parent = section.parentId ? getSectionById(section.parentId) : undefined;
+  const seo = metaForSection(section, parent);
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <PageMeta
+        title={seo.title}
+        description={seo.description}
+        canonical={`${SITE_URL}/forum/${section.slug}`}
+      />
       <div className="bg-white border-b border-gray-200 py-6">
         <div className="container mx-auto px-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
@@ -96,7 +112,7 @@ export const ForumSectionPage: React.FC = () => {
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">{section.name}</h1>
-              <p className="text-gray-600 mt-1">{section.description}</p>
+              <p className="text-gray-600 mt-1">{seo.description}</p>
               <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
                 <span>{headerThreadCount} threads</span>
                 <span>{headerPostCount} posts</span>
